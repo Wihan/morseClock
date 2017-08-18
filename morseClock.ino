@@ -1,5 +1,7 @@
 #include <Wire.h>
-#include <Adafruit_NeoPixel.h>
+
+#define FASTLED_INTERNAL //removes pragma message printing FastLED version
+#include "FastLED.h"
 #include <AnalogTouch.h>
 #include <RTClib.h>
 
@@ -73,7 +75,7 @@ byte alarmOnOffState;
 #define LED_MINUTE_TENS 2
 #define LED_MINUTE_ONES 3
 
-int ledMatrix[PIXELS_IN_COL][PIXELS_IN_ROW] = {
+const byte ledMatrix[PIXELS_IN_COL][PIXELS_IN_ROW] = {
   {0, 1, 2, 3, 4},
   {9, 8, 7, 6, 5},
   {10, 11, 12, 13, 14},
@@ -81,7 +83,7 @@ int ledMatrix[PIXELS_IN_COL][PIXELS_IN_ROW] = {
 };
 
 
-int morseNum[10][5] = {
+const byte morseNum[10][5] = {
   {0, 0, 0, 0, 0}, //0
   {1, 0, 0, 0, 0}, //1
   {1, 1, 0, 0, 0}, //2
@@ -111,28 +113,28 @@ unsigned long diff;
 unsigned long startTime;
 
 RTC_DS1307 rtc;
-char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+//char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
 
 
-
-Adafruit_NeoPixel pixels = Adafruit_NeoPixel(NUMPIXELS, LED_DATA_PIN, NEO_RGB + NEO_KHZ800);
+CRGB pixels[NUMPIXELS];
 
 //COLOR CONFIG
-#define TOTAL_COLORS  7
-uint32_t colorList[] = {
-  pixels.Color(255, 0, 0),    //RED
-  pixels.Color(255, 255, 0),  //YELLOW
-  pixels.Color(0, 255, 0),    //GREEN
-  pixels.Color(0, 255, 255),  //CYAN
-  pixels.Color(0, 0, 255),    //BLUE
-  pixels.Color(255, 0, 255),  //MAGENTA
-  pixels.Color(255, 255, 255) //WHITE
+#define TOTAL_COLORS  8
+const unsigned int colorList[] = {
+  CRGB::Red,
+  CRGB::Yellow,
+  CRGB::Green,
+  CRGB::Lime,
+  CRGB::Cyan,
+  CRGB::Blue,
+  CRGB::Magenta,
+  CRGB::White
 };
 byte selectedColor = 0;
 
 void setup() {
   Serial.begin(BAUD_RATE);    // initialize serial communication
-  pixels.begin(); // This initializes the NeoPixel library.
+  FastLED.addLeds<NEOPIXEL, LED_DATA_PIN>(pixels, NUMPIXELS); // This initializes the FAST LED library.
 
   if (! rtc.begin()) {
     Serial.println("Couldn't find RTC");
@@ -188,8 +190,13 @@ void evaluateButtons() {
   if ( digitalRead(alarmSetPin) ) {
 //    Serial.println("Setting Clock");
     if (isSetMinutePressed()) {
-      uint32_t now = rtc.now().unixtime();
-      rtc.adjust(DateTime(now+60));
+      DateTime now = rtc.now();
+      if (now.minute() < 59) {
+        rtc.adjust(DateTime(now.unixtime()+60));
+      }
+      else {
+        rtc.adjust(DateTime(now.unixtime()-3540));
+      }
     }
 
     if (isSetHourPressed()) {
@@ -298,13 +305,15 @@ void updatePixelsWithRTCTime() {
     }
 
     int oldAmbientLight = readAmbientLight();
-    Serial.println("Ambient Light: ");
+//    Serial.println("Ambient Light: ");
     
     int newAmbientLight = map(oldAmbientLight, 0, 1024, 10, 255);
-    Serial.println(newAmbientLight);
+//    Serial.println(newAmbientLight);
     
-    pixels.setBrightness(newAmbientLight);
-    pixels.show();
+    FastLED.setBrightness(newAmbientLight);
+
+
+    FastLED.show();
   }
 }
 
@@ -337,7 +346,7 @@ void internalClock() {
     hours = 0;
     setHour(hours);
   }
-  pixels.show();
+  FastLED.show();
 }
 
 bool detectTouch() {
@@ -411,9 +420,9 @@ void setHour(int hour) {
 
 void setPixelState(int i, int ledState) {
   if (ledState) {
-    pixels.setPixelColor(i, colorList[selectedColor]); //white
+    pixels[i] = colorList[selectedColor];
   } else {
-    pixels.setPixelColor(i, pixels.Color(0, 0, 0)); //off
+    pixels[i] = CRGB::Black; //off
   }
 }
 

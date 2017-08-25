@@ -24,8 +24,7 @@
 
 //CLOCK CONSTANTS
 #define MILLIS_PER_SEC  1000
-#define MICROS_PER_SEC  100000
-//#define MICROS_PER_SEC  1000000
+#define REFRESH_PERIOD  16666 // 16.66 ms
 
 
 //CAPACTIVE TOUCH
@@ -42,38 +41,141 @@
 
 //BUZZER
 #define buzzerPin 6
-boolean isBuzzing = 0;
+
 
 //SET TIME INPUT BUTTONS
 //Falling Edge Detection
-#define FE(signal, state) (state=(state<<1)|(signal&1)&3)==2
+#define FE(signal, state) (state=(((state<<1)|(signal&1))&3))==2
 
-//Rising Edge Detection
-#define RE(signal, state) (state=(state<<1)|(signal&1)&3)==1
+/* Rising Edge Detection  */
+#define RE(signal, state) (state=(((state<<1)|(signal&1))&3))==1
 
-const byte hourSetPin = 9;
-byte hourSetState;
+/*
+  This is how the previous macros work:
 
-const byte minuteSetPin = 8;
-byte minuteSetState;
+  << is the left shift operator
 
-const byte alarmSetPin = 5;
-byte alarmSetState;
+  shifting a bit left by n positions
+  0 << 1 = 0
+  1 << 1 = 2
+  will shift a bit 1 position to the left
+  the same as multiplying by 2
+  1 << 2 = 4 will shift a bit 2 positions to the left
+  the same as multiplying by 4 etc
 
-const byte colorSetPin = 4;
-byte colorSetState;
+  | is the bitwise OR operator. (binary addition without a carry)
+  1 | 1 = 1
+  0 | 1 = 1
+  1 | 1 = 1
+  0 | 0 = 0
 
-const byte alarmOnOffPin = 2;
-byte alarmOnOffState;
+  6 | 3 = 7
 
+    101
+  | 011
+    ---
+    111
+
+  & is the bitwise AND operator
+  1 & 1 = 1
+  1 & 0 = 0
+  0 & 1 = 0
+  0 & 0 = 0
+
+  3 & 3 = 3
+    111
+  & 111
+    ---
+    111
+
+  4 & 3 = 0
+    100
+  & 011
+    ---
+    000
+
+  1 & 3 = 1
+    001
+  & 011
+    ---
+    001
+
+  So lets start:
+
+
+  state = 1 initialized as 1
+  button is pulled HIGH and is not pressed
+  state = (1<<1)|(HIGH&1)&3)
+          (2|1) & 3
+            3
+  state = 3
+  3 == 1 is  false
+
+  state = 3
+  button is pulled HIGH and is still not pressed
+  state = (3<<1)|(HIGH&1)&3)
+          (6|1) & 3
+            7 & 3
+  state = 3
+  3 == 1 is false
+
+  state = 3
+  button is pulled LOW and is pressed
+  state = (3<<1)|(LOW&1)&3)
+          (6|0) & 3
+            6 & 3
+  state = 2
+  2 == 1 is false (a falling edge just occured)
+
+  state = 2
+  button is pulled LOW and is still pressed
+  state = (2<<1)|(LOW&1)&3)
+          (4|0) & 3
+            4 & 3
+  state = 0
+  0 == 1 false (no falling edge here, we are now low)
+
+  state = 0
+  button is pulled HIGH and is not pressed
+  state = (0<<1)|(HIGH&1)&3)
+          (0|1) & 3
+            1 & 3
+  state = 1
+  1 == 1 true (a rising edge was detected)
+
+  state = 1
+  back to the start
+*/
+
+struct Buttons {
+  const byte hourSetPin = 9;
+  byte hourSetState = 1;
+
+  const byte minuteSetPin = 8;
+  byte minuteSetState = 1;
+
+  const byte setAlarmPin = 5;
+  byte setAlarmState = 1;
+
+  const byte toggleAlarmOnOffPin = 2;
+  byte alarmOnOffState = 1;
+
+  const byte colorSetPin = 4;
+  byte colorSetState = 1;
+
+} buttons;
+
+const byte is12h24hJumperPin = 13;
 
 //LED MATRIX WIRING LAYOUT
 //led[0][3] Reserved for AM/PM indicator
 //led[0][4] Reserved for Alarm ON/OFF indicator
-#define LED_HOUR_TENS 0
-#define LED_HOUR_ONES 1
-#define LED_MINUTE_TENS 2
-#define LED_MINUTE_ONES 3
+#define AM_PM_LED         3
+#define ALARM_ON_OFF_LED  4
+#define LED_HOUR_TENS     0
+#define LED_HOUR_ONES     1
+#define LED_MINUTE_TENS   2
+#define LED_MINUTE_ONES   3
 
 const byte ledMatrix[PIXELS_IN_COL][PIXELS_IN_ROW] = {
   {0, 1, 2, 3, 4},
@@ -83,7 +185,7 @@ const byte ledMatrix[PIXELS_IN_COL][PIXELS_IN_ROW] = {
 };
 
 
-const byte morseNum[10][5] = {
+const boolean morseNum[10][5] = {
   {0, 0, 0, 0, 0}, //0
   {1, 0, 0, 0, 0}, //1
   {1, 1, 0, 0, 0}, //2
@@ -96,31 +198,27 @@ const byte morseNum[10][5] = {
   {0, 0, 0, 0, 1}  //9
 };
 
-//CAP TOUCH REFs
-int ref0, ref1;
+struct Alarm {
+  byte alarmHour = 0;
+  byte alarmMinute = 0;
+  byte snoozeMinutes = 0;
 
-//CLOCK VARIABLES
-byte hours;
-byte minutes;
-byte seconds;
+  const byte alarmHourAddr = 0;
+  const byte alarmMinuteAddr = 1;
+  boolean isBuzzing = 0;
+  boolean alarmIsOn = false;
+} alarm;
 
-byte alarmHours = 8;
-byte alarmMinutes = 0;
-boolean alarmOn = false;
 boolean is24H = true;
-
-unsigned long diff;
-unsigned long startTime;
 
 RTC_DS1307 rtc;
 //char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
-
 
 CRGB pixels[NUMPIXELS];
 
 //COLOR CONFIG
 #define TOTAL_COLORS  8
-const unsigned int colorList[] = {
+const unsigned long colorList[] = {
   CRGB::Red,
   CRGB::Yellow,
   CRGB::Green,
@@ -130,11 +228,13 @@ const unsigned int colorList[] = {
   CRGB::Magenta,
   CRGB::White
 };
+
+unsigned long startTime = 0;
 byte selectedColor = 0;
 
 void setup() {
   Serial.begin(BAUD_RATE);    // initialize serial communication
-  FastLED.addLeds<NEOPIXEL, LED_DATA_PIN>(pixels, NUMPIXELS); // This initializes the FAST LED library.
+  FastLED.addLeds<WS2812B, LED_DATA_PIN, RGB>(pixels, NUMPIXELS); // This initializes the FAST LED library.
 
   if (! rtc.begin()) {
     Serial.println("Couldn't find RTC");
@@ -144,89 +244,156 @@ void setup() {
   if (! rtc.isrunning()) {
     Serial.println("RTC is NOT running!");
     // following line sets the RTC to the date & time this sketch was compiled
-     rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
     // This line sets the RTC with an explicit date & time, for example to set
     // January 21, 2014 at 3am you would call:
     // rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0));
   }
 
-  pinMode(hourSetPin, INPUT_PULLUP);
-  pinMode(minuteSetPin, INPUT_PULLUP);
-  pinMode(alarmSetPin, INPUT_PULLUP);
-  pinMode(colorSetPin, INPUT_PULLUP);
-  pinMode(alarmOnOffPin, INPUT_PULLUP);
+  pinMode(buttons.hourSetPin,  INPUT_PULLUP);
+  pinMode(buttons.minuteSetPin,INPUT_PULLUP);
+  pinMode(buttons.setAlarmPin, INPUT_PULLUP);
+  pinMode(buttons.colorSetPin, INPUT_PULLUP);
+  pinMode(buttons.toggleAlarmOnOffPin, INPUT_PULLUP);
+  pinMode(is12h24hJumperPin, INPUT);
 
-  alarmSetState = 1;
-  hourSetState = 1;
-  minuteSetState = 1;
-  colorSetState = 1;
-  alarmOnOffState = 1;
-  
+
+  delay(10); // allow settle time
+  alarm.alarmHour = rtc.readnvram(alarm.alarmHourAddr); //read alarm value from nvram
+  alarm.alarmMinute = rtc.readnvram(alarm.alarmMinuteAddr); //read alarm value from nvram
+
   pinMode(buzzerPin, OUTPUT);
-  pinMode(BOARD_LED, OUTPUT);
   pinMode(ALARM_LED, OUTPUT);
 
   analogReference(EXTERNAL);
   
-  hours = 0;
-  minutes = 0;
-  seconds = 0; //clock defaults
-  diff = 0;
+  is24H = digitalRead(is12h24hJumperPin); // Ground is 12h, 24h is High
+  
   startTime = micros();
-  delay(1000); // allow everything to settle
+  delay(100); // allow everything to settle
+  
 }
 
+
+/***********************
+       MAIN LOOP
+************************/
 void loop() {
-  bool touched = detectTouch();
-  updatePixelsWithRTCTime();
+  unsigned long diff = micros() - startTime;
+
+  //display loop runs ever so often
+  if (diff >= REFRESH_PERIOD) {
+    startTime = micros();
+    changeBrightness();
+    DateTime now = rtc.now();
+
+    if ( digitalRead(buttons.setAlarmPin) ) {
+      // add flash here when alarm is on
+      updatePixels(now.hour(), now.minute());
+    }
+    else { // if alarmSetPin is pressed (LOW) it will show the alarmSet time
+      updatePixels(alarm.alarmHour, alarm.alarmMinute);
+    }
+
+    alarmLoop(now);
+
+  }
+
   evaluateButtons();
-  readAmbientLight(); 
- 
+
+}
+
+/***********************
+    HELPER FUNCTIONS
+************************/
+void alarmLoop(DateTime now) {
+  if (alarm.alarmIsOn) {
+    //todo what if our alarm is set for 23:59 and we snooze for 5 min it wont go off again, because now we are at 23*60 + 59 + 5 and the current time is 0:04
+    int totalClockMinutes = (now.hour() * 60) + now.minute();
+    int totalAlarmMinutes = (alarm.alarmHour * 60) + alarm.alarmMinute + alarm.snoozeMinutes;
+    // buzz again if set to buzzing or start buzzing when our times are equal
+    if ( (alarm.isBuzzing) || ( totalClockMinutes + totalAlarmMinutes ) ) {
+      toggleAlarmBuzzing(true);
+    }
+
+    if (detectTouch()) {
+      startTime = millis();
+      while (detectTouch()) {
+        unsigned int beenTouching = millis() - startTime;
+        if (beenTouching > 2000) {
+          toggleAlarmBuzzing(false); // false adds time to snooze and turns off buzzer
+          Serial.println("Touched for 2s snoozing for 5 min");
+          break; // break out of while
+        } // end if
+      } // end while
+    } // end touched if
+  }
+}
+
+byte incrementRTCMinute() {
+  DateTime now = rtc.now();
+  if (now.minute() < 59) {
+    rtc.adjust(DateTime(now.unixtime() + 60));
+    return now.minute() + 1;
+  }
+  else {
+    rtc.adjust(DateTime(now.unixtime() - 3540));
+    return 0;
+  }
+}
+
+byte incrementRTCHour() {
+  DateTime now = rtc.now();
+  uint32_t epoch = now.unixtime();
+  rtc.adjust(DateTime(epoch + 3600));
+  return rtc.now().hour();
+}
+
+byte incrementAlarmMinute() {
+  alarm.alarmMinute = (alarm.alarmMinute + 1) % 60;
+  Serial.print("Alarm Minute: ");  Serial.println(alarm.alarmMinute);
+  rtc.writenvram(alarm.alarmMinuteAddr, alarm.alarmMinute);
+  return alarm.alarmMinute;
+}
+
+byte incrementAlarmHour() {
+  alarm.alarmHour = (alarm.alarmHour + 1) % 24;
+  Serial.print("Alarm Hour: "); Serial.println(alarm.alarmHour);
+  rtc.writenvram(alarm.alarmHourAddr, alarm.alarmHour);
+  return alarm.alarmHour;
 }
 
 void evaluateButtons() {
 
   //alarmSetButton is not low, alarm default HIGH when not pressed
-  if ( digitalRead(alarmSetPin) ) {
-//    Serial.println("Setting Clock");
+  if ( digitalRead(buttons.setAlarmPin) ) {
+    //    Serial.println("Setting Clock");
     if (isSetMinutePressed()) {
-      DateTime now = rtc.now();
-      if (now.minute() < 59) {
-        rtc.adjust(DateTime(now.unixtime()+60));
-      }
-      else {
-        rtc.adjust(DateTime(now.unixtime()-3540));
-      }
+      incrementRTCMinute();
     }
 
     if (isSetHourPressed()) {
-      uint32_t now = rtc.now().unixtime();
-      rtc.adjust(DateTime(now+3600));
+      incrementRTCHour();
     }
-    //write new hour and minute value to RTC
   }
   else {
-//    Serial.println("Setting alarm");
+    //    Serial.println("Setting alarm");
     if (isSetMinutePressed()) {
-      ++alarmMinutes;
-      Serial.print("Alarm Minutes: ");
-      Serial.println(alarmMinutes);
+      incrementAlarmMinute();
     }
 
     if (isSetHourPressed()) {
-      ++alarmHours;
-      Serial.print("Alarm Hours: ");
-      Serial.println(alarmHours);
+      incrementAlarmHour();
     }
   }
 
   //TOGGLE ALARM
-  if (isToggleAlarmPressed()) {
-    alarmOn = !alarmOn;
-//    isBuzzing = !isBuzzing;
-//    activateBuzzer(isBuzzing);
-    Serial.print("Alarm ON?: ");
-    Serial.println(alarmOn);
+  if (isToggleAlarmOnOffPressed()) {
+    alarm.alarmIsOn = !alarm.alarmIsOn;
+    if (!alarm.alarmIsOn) {
+      toggleAlarmBuzzing(false);
+      alarm.snoozeMinutes = 0;
+    }
   }
 
   if (isCycleColorPressed()) {
@@ -236,117 +403,46 @@ void evaluateButtons() {
     Serial.println(selectedColor);
   }
 
-  // toggle 24h, 12h
-  if (digitalRead(hourSetPin) && isSetMinutePressed() ) {
-    is24H = !is24H;
-    if (!is24H) {
-      if (alarmHours > 12) {
-        alarmHours = alarmHours - 12;
-      }
-    }
-  }
-//delay(100);
 }
 
-void activateBuzzer(boolean buzz) {
+void toggleAlarmBuzzing(boolean buzz) {
   if (buzz) {
-    tone(buzzerPin,440,250);  
+    alarm.isBuzzing = true;
+    tone(buzzerPin, 440, 250);
+    // is this ms blocking?
   } else {
+    alarm.isBuzzing = false;
+    alarm.snoozeMinutes += 5;
     noTone(buzzerPin);
   }
-
 }
 
 int readAmbientLight() {
-//  10 dark - 600 light - 1000 flash 
-  return analogRead(photoResistor);  
+  //  10 dark - 600 light - 1000 flash
+  return analogRead(photoResistor);
 }
 
 boolean isSetHourPressed() {
   //all buttons are active LOW
-  return RE(digitalRead(hourSetPin), hourSetState);
+  return RE(digitalRead(buttons.hourSetPin), buttons.hourSetState);
 }
 
 boolean isSetMinutePressed() {
-  return RE(digitalRead(minuteSetPin), minuteSetState);
+  return RE(digitalRead(buttons.minuteSetPin), buttons.minuteSetState);
 }
 
 
 boolean isSetAlarmPressed() {
-  return RE(digitalRead(alarmSetPin), alarmSetState);
+  return RE(digitalRead(buttons.setAlarmPin), buttons.setAlarmState);
 }
 
 
 boolean isCycleColorPressed() {
-  return RE(digitalRead(colorSetPin), colorSetState);
+  return RE(digitalRead(buttons.colorSetPin), buttons.colorSetState);
 }
 
-
-boolean isToggleAlarmPressed() {
-  return RE(digitalRead(alarmOnOffPin), alarmOnOffState);
-}
-
-
-void updatePixelsWithRTCTime() {
-   diff = micros() - startTime;
-
-  if (diff >= MICROS_PER_SEC) {
-    startTime = micros();
-    DateTime now = rtc.now();
-    Serial.println(now.second());
-    setMinute(now.minute());
-    if (!is24H) {
-      if (now.hour() > 12) {
-        setHour(now.hour()-12);
-      }
-    }  
-    else {
-      setHour(now.hour());    
-    }
-
-    int oldAmbientLight = readAmbientLight();
-//    Serial.println("Ambient Light: ");
-    
-    int newAmbientLight = map(oldAmbientLight, 0, 1024, 10, 255);
-//    Serial.println(newAmbientLight);
-    
-    FastLED.setBrightness(newAmbientLight);
-
-
-    FastLED.show();
-  }
-}
-
-// use internal clock
-void internalClock() {
-  diff = micros() - startTime;
-
-  if (diff >= MICROS_PER_SEC) {
-    startTime = micros();
-    seconds += 1;
-    Serial.println(diff);
-    setMinute(minutes);
-    setHour(hours);
-  }
-
-  if (seconds == 60) {
-    seconds = 0;
-    minutes += 1;
-    setMinute(minutes);
-  }
-
-  if (minutes == 60) {
-    minutes = 0;
-    hours += 1;
-    setMinute(minutes);
-    setHour(hours);
-  }
-
-  if ((hours == 24 && is24H) || (hours == 12 && !is24H) ) {
-    hours = 0;
-    setHour(hours);
-  }
-  FastLED.show();
+boolean isToggleAlarmOnOffPressed() {
+  return RE(digitalRead(buttons.toggleAlarmOnOffPin), buttons.alarmOnOffState);
 }
 
 bool detectTouch() {
@@ -364,29 +460,66 @@ bool detectTouch() {
 
   // Print touched?
   bool touched = (value - (ref >> offset)) > 20;
-//    Serial.print(touched);
-//    Serial.print("\t");
+  //      Serial.print(touched);
+  //      Serial.print("\t");
 
   // Print calibrated value
-//    Serial.print(value - (ref >> offset));
-//    Serial.print("\t");
+  //      Serial.print(value - (ref >> offset));
+  //      Serial.print("\t");
 
   // Print raw value
-//    Serial.print(value);
-//    Serial.print("\t");
+  //      Serial.print(value);
+  //      Serial.print("\t");
 
   // Print raw ref
-//    Serial.print(ref >> offset);
-//    Serial.print("\t");
-//    Serial.println(ref);
-
-  //Light Up When Touched
-  digitalWrite(BOARD_LED, touched);
+  //      Serial.print(ref >> offset);
+  //      Serial.print("\t");
+  //      Serial.println(ref);
 
   return touched;
 }
 
-void setMinute(int minute) {
+
+
+void updatePixels(byte hour, byte minute) {
+  setPixelMinute(minute);
+
+  if (!is24H) {
+    if (hour > 12) {
+      setPixelHour(hour - 12);
+      setAMPMPixel(1);
+    }
+  }
+  else {
+    setPixelHour(hour);
+    setAMPMPixel(0);
+  }
+
+  setAlarmOnPixel();
+
+  FastLED.show();
+}
+
+void setAlarmOnPixel() {
+  setPixelState( ALARM_ON_OFF_LED , alarm.alarmIsOn); // alarmSetPixel
+}
+
+void setAMPMPixel(boolean ledState) {
+  setPixelState( AM_PM_LED , ledState);
+}
+
+void changeBrightness() {
+  int oldAmbientLight = readAmbientLight();
+  //    Serial.println("Ambient Light: ");
+
+  int newAmbientLight = map(oldAmbientLight, 0, 1024, 10, 255);
+  //    Serial.println(newAmbientLight);
+
+  FastLED.setBrightness(newAmbientLight);
+  FastLED.show();
+}
+
+void setPixelMinute(int minute) {
   Serial.print("Setting Minute To: ");
   Serial.println(minute);
   int ones = minute % 10;
@@ -402,7 +535,7 @@ void setMinute(int minute) {
 }
 
 
-void setHour(int hour) {
+void setPixelHour(int hour) {
   Serial.print("Setting hour To: ");
   Serial.println(hour);
   int ones = hour % 10;
@@ -418,15 +551,10 @@ void setHour(int hour) {
 
 }
 
-void setPixelState(int i, int ledState) {
+void setPixelState(int i, boolean ledState) {
   if (ledState) {
     pixels[i] = colorList[selectedColor];
   } else {
     pixels[i] = CRGB::Black; //off
   }
 }
-
-
-
-
-

@@ -217,20 +217,11 @@ RTC_DS1307 rtc;
 CRGB pixels[NUMPIXELS];
 
 //COLOR CONFIG
-#define TOTAL_COLORS  8
-const unsigned long colorList[] = {
-  CRGB::Red,
-  CRGB::Yellow,
-  CRGB::Green,
-  CRGB::Lime,
-  CRGB::Cyan,
-  CRGB::Blue,
-  CRGB::Magenta,
-  CRGB::White
-};
+byte currentColorHue = 0;
+
 
 unsigned long startTime = 0;
-byte selectedColor = 0;
+
 
 void setup() {
   Serial.begin(BAUD_RATE);    // initialize serial communication
@@ -295,7 +286,7 @@ void loop() {
       updatePixels(alarm.alarmHour, alarm.alarmMinute);
     }
 
-    alarmLoop(now);
+    alarmLoop(now); 
 
   }
 
@@ -398,9 +389,7 @@ void evaluateButtons() {
 
   if (isCycleColorPressed()) {
     //rotate through colors
-    selectedColor = (selectedColor + 1) % TOTAL_COLORS;
-    Serial.print("Color: ");
-    Serial.println(selectedColor);
+    currentColorHue = currentColorHue + 5;
   }
 
 }
@@ -482,19 +471,21 @@ bool detectTouch() {
 
 
 void updatePixels(byte hour, byte minute) {
+  // minute is always the same for either 24/12
   setPixelMinute(minute);
+  // set time like normal
+  setPixelHour(hour);
+  setAMPMPixel(0);
 
+  // there is a special case here, overrides previous set
   if (!is24H) {
     if (hour > 12) {
       setPixelHour(hour - 12);
       setAMPMPixel(1);
     }
   }
-  else {
-    setPixelHour(hour);
-    setAMPMPixel(0);
-  }
 
+  // update alarm on pixel according to alarm.alarmIsOn state
   setAlarmOnPixel();
 
   FastLED.show();
@@ -551,10 +542,12 @@ void setPixelHour(int hour) {
 
 }
 
+
 void setPixelState(int i, boolean ledState) {
   if (ledState) {
-    pixels[i] = colorList[selectedColor];
+    pixels[i].setHue(currentColorHue);
   } else {
     pixels[i] = CRGB::Black; //off
   }
 }
+

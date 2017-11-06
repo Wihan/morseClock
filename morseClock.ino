@@ -481,7 +481,13 @@ void updatePixels(byte hour, byte minute) {
   if (!is24H) {
     if (hour > 12) {
       setPixelHour(hour - 12);
+      // AM/PM LED is on for PM
       setAMPMPixel(1);
+    }
+
+    if (hour == 0) {
+      setPixelHour(12);
+      setAMPMPixel(0);
     }
   }
 

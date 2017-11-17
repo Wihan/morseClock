@@ -303,7 +303,7 @@ void alarmLoop(DateTime now) {
     int totalClockMinutes = (now.hour() * 60) + now.minute();
     int totalAlarmMinutes = (alarm.alarmHour * 60) + alarm.alarmMinute + alarm.snoozeMinutes;
     // buzz again if set to buzzing or start buzzing when our times are equal
-    if ( (alarm.isBuzzing) || ( totalClockMinutes + totalAlarmMinutes ) ) {
+    if ( (alarm.isBuzzing) || ( totalClockMinutes == totalAlarmMinutes ) ) {
       toggleAlarmBuzzing(true);
     }
 

@@ -30,17 +30,17 @@
 //CAPACTIVE TOUCH
 #define pinAnalog A7
 // Slow down the automatic calibration cooldown
-#define offset 5
+#define offset 2
 #if offset > 6
 #error "Too big offset value"
 #endif
 
 
 //AMBIENT LIGHT DETECTION
-#define photoResistor A0
+#define photoResistor A6
 
 //BUZZER
-#define buzzerPin 6
+#define buzzerPin 3
 
 
 //SET TIME INPUT BUTTONS
@@ -177,6 +177,7 @@ const byte is12h24hJumperPin = 13;
 #define LED_MINUTE_TENS   2
 #define LED_MINUTE_ONES   3
 
+// note the layout of the matrix, corresponds a snaked layout on the board
 const byte ledMatrix[PIXELS_IN_COL][PIXELS_IN_ROW] = {
   {0, 1, 2, 3, 4},
   {9, 8, 7, 6, 5},
@@ -242,7 +243,7 @@ void setup() {
   }
 
   pinMode(buttons.hourSetPin,  INPUT_PULLUP);
-  pinMode(buttons.minuteSetPin,INPUT_PULLUP);
+  pinMode(buttons.minuteSetPin, INPUT_PULLUP);
   pinMode(buttons.setAlarmPin, INPUT_PULLUP);
   pinMode(buttons.colorSetPin, INPUT_PULLUP);
   pinMode(buttons.toggleAlarmOnOffPin, INPUT_PULLUP);
@@ -257,12 +258,15 @@ void setup() {
   pinMode(ALARM_LED, OUTPUT);
 
   analogReference(EXTERNAL);
-  
-  is24H = digitalRead(is12h24hJumperPin); // Ground is 12h, 24h is High
-  
+
+  is24H = !digitalRead(is12h24hJumperPin); // Ground is 12h, 24h is High
+
   startTime = micros();
   delay(100); // allow everything to settle
-  
+  DateTime now = rtc.now();
+  alarm.alarmIsOn = true;
+  alarm.alarmHour = now.hour();
+  alarm.alarmMinute = now.minute();
 }
 
 
@@ -286,7 +290,7 @@ void loop() {
       updatePixels(alarm.alarmHour, alarm.alarmMinute);
     }
 
-    alarmLoop(now); 
+    alarmLoop(now);
 
   }
 
@@ -299,25 +303,27 @@ void loop() {
 ************************/
 void alarmLoop(DateTime now) {
   if (alarm.alarmIsOn) {
-    //todo what if our alarm is set for 23:59 and we snooze for 5 min it wont go off again, because now we are at 23*60 + 59 + 5 and the current time is 0:04
-    int totalClockMinutes = (now.hour() * 60) + now.minute();
-    int totalAlarmMinutes = (alarm.alarmHour * 60) + alarm.alarmMinute + alarm.snoozeMinutes;
+    // what if our alarm is set for 23:55 and we snooze for 5 min it wont go off again, because now we are at 23*60 + 55 + 5 and the current time is 0:04
+    //     we mod out calculation
+    int totalClockMinutes = ((now.hour() * 60) + now.minute() ) % 1440; // 1440 is number of minutes in a day
+    int totalAlarmMinutes = ((alarm.alarmHour * 60) + alarm.alarmMinute + alarm.snoozeMinutes) % 1440;
     // buzz again if set to buzzing or start buzzing when our times are equal
     if ( (alarm.isBuzzing) || ( totalClockMinutes == totalAlarmMinutes ) ) {
       toggleAlarmBuzzing(true);
-    }
 
-    if (detectTouch()) {
-      startTime = millis();
-      while (detectTouch()) {
-        unsigned int beenTouching = millis() - startTime;
-        if (beenTouching > 2000) {
-          toggleAlarmBuzzing(false); // false adds time to snooze and turns off buzzer
-          Serial.println("Touched for 2s snoozing for 5 min");
-          break; // break out of while
-        } // end if
-      } // end while
-    } // end touched if
+      if (detectTouch()) {
+        startTime = millis();
+        while (detectTouch()) {
+          unsigned int beenTouching = millis() - startTime;
+          if (beenTouching > 1000) {
+            toggleAlarmBuzzing(false); // false adds time to snooze and turns off buzzer
+            Serial.println("Touched for 2s snoozing for 5 min");
+            alarm.snoozeMinutes += 5;
+            break; // break out of while
+          } // end if
+        } // end while
+      }// end touched if
+    }
   }
 }
 
@@ -342,14 +348,14 @@ byte incrementRTCHour() {
 
 byte incrementAlarmMinute() {
   alarm.alarmMinute = (alarm.alarmMinute + 1) % 60;
-  Serial.print("Alarm Minute: ");  Serial.println(alarm.alarmMinute);
+  //  Serial.print("Alarm Minute: ");  Serial.println(alarm.alarmMinute);
   rtc.writenvram(alarm.alarmMinuteAddr, alarm.alarmMinute);
   return alarm.alarmMinute;
 }
 
 byte incrementAlarmHour() {
   alarm.alarmHour = (alarm.alarmHour + 1) % 24;
-  Serial.print("Alarm Hour: "); Serial.println(alarm.alarmHour);
+  //  Serial.print("Alarm Hour: "); Serial.println(alarm.alarmHour);
   rtc.writenvram(alarm.alarmHourAddr, alarm.alarmHour);
   return alarm.alarmHour;
 }
@@ -397,11 +403,11 @@ void evaluateButtons() {
 void toggleAlarmBuzzing(boolean buzz) {
   if (buzz) {
     alarm.isBuzzing = true;
-    tone(buzzerPin, 440, 250);
+    tone(buzzerPin, 24);
+
     // is this ms blocking?
   } else {
     alarm.isBuzzing = false;
-    alarm.snoozeMinutes += 5;
     noTone(buzzerPin);
   }
 }
@@ -413,11 +419,20 @@ int readAmbientLight() {
 
 boolean isSetHourPressed() {
   //all buttons are active LOW
-  return RE(digitalRead(buttons.hourSetPin), buttons.hourSetState);
+  boolean touched = RE(digitalRead(buttons.hourSetPin), buttons.hourSetState);
+  if (touched)
+    Serial.println("Set Hour Pressed");
+
+  return touched;
 }
 
 boolean isSetMinutePressed() {
-  return RE(digitalRead(buttons.minuteSetPin), buttons.minuteSetState);
+
+  boolean touched = RE(digitalRead(buttons.minuteSetPin), buttons.minuteSetState);
+  if (touched)
+    Serial.println("Set minute Pressed");
+
+  return touched;
 }
 
 
@@ -436,7 +451,7 @@ boolean isToggleAlarmOnOffPressed() {
 
 bool detectTouch() {
   // No second parameter will use 1 sample
-  uint16_t value = analogTouchRead(pinAnalog, 10);
+  uint16_t value = analogTouchRead(pinAnalog, 100);
   //value = analogTouchRead(pinAnalog, 100);
 
   // Self calibrate
@@ -449,21 +464,21 @@ bool detectTouch() {
 
   // Print touched?
   bool touched = (value - (ref >> offset)) > 20;
-  //      Serial.print(touched);
-  //      Serial.print("\t");
+  //          Serial.print(touched);
+  //          Serial.print("\t");
 
   // Print calibrated value
-  //      Serial.print(value - (ref >> offset));
-  //      Serial.print("\t");
+  //          Serial.print(value - (ref >> offset));
+  //          Serial.print("\t");
 
   // Print raw value
-  //      Serial.print(value);
-  //      Serial.print("\t");
+  //          Serial.print(value);
+  //          Serial.print("\t");
 
   // Print raw ref
-  //      Serial.print(ref >> offset);
-  //      Serial.print("\t");
-  //      Serial.println(ref);
+  //          Serial.print(ref >> offset);
+  //          Serial.print("\t");
+  //          Serial.println(ref);
 
   return touched;
 }
@@ -507,18 +522,21 @@ void setAMPMPixel(boolean ledState) {
 
 void changeBrightness() {
   int oldAmbientLight = readAmbientLight();
-  //    Serial.println("Ambient Light: ");
+  //      Serial.println("OLD Light: ");
+  //      Serial.print(oldAmbientLight);
 
-  int newAmbientLight = map(oldAmbientLight, 0, 1024, 10, 255);
-  //    Serial.println(newAmbientLight);
+  int newAmbientLight = map(oldAmbientLight, 0, 1024, 10, 90);
+  //      Serial.println("NEW Light: ");
+  //      Serial.println(newAmbientLight);
+
 
   FastLED.setBrightness(newAmbientLight);
   FastLED.show();
 }
 
 void setPixelMinute(int minute) {
-  Serial.print("Setting Minute To: ");
-  Serial.println(minute);
+  //  Serial.print("Setting Minute To: ");
+  //  Serial.println(minute);
   int ones = minute % 10;
   int tens = (minute / 10) % 10;
 
@@ -533,8 +551,8 @@ void setPixelMinute(int minute) {
 
 
 void setPixelHour(int hour) {
-  Serial.print("Setting hour To: ");
-  Serial.println(hour);
+  //  Serial.print("Setting hour To: ");
+  //  Serial.println(hour);
   int ones = hour % 10;
   int tens = (hour / 10) % 10;
 

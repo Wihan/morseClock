@@ -1,6 +1,6 @@
 #include <Wire.h>
 
-#define FASTLED_INTERNAL //removes pragma message printing FastLED version
+#define FASTLED_INTERNAL // removes pragma message printing FastLED version
 #include "FastLED.h"
 #include <AnalogTouch.h>
 #include <RTClib.h>
@@ -259,12 +259,11 @@ void setup() {
 
   analogReference(EXTERNAL);
 
-  is24H = !digitalRead(is12h24hJumperPin); // Ground is 12h, 24h is High
+  is24H = digitalRead(is12h24hJumperPin); // Ground is 12h, 24h is High
 
   startTime = micros();
   delay(100); // allow everything to settle
   DateTime now = rtc.now();
-  alarm.alarmIsOn = true;
   alarm.alarmHour = now.hour();
   alarm.alarmMinute = now.minute();
 }

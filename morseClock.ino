@@ -208,6 +208,8 @@ struct Alarm {
   const byte alarmMinuteAddr = 1;
   boolean isBuzzing = 0;
   boolean alarmIsOn = false;
+
+  const byte alarmIsOnAddr = 2;
 } alarm;
 
 boolean is24H = true;
@@ -219,6 +221,7 @@ CRGB pixels[NUMPIXELS];
 
 //COLOR CONFIG
 byte currentColorHue = 0;
+byte colorAddress = 3;
 
 
 unsigned long startTime = 0;
@@ -251,8 +254,11 @@ void setup() {
 
 
   delay(10); // allow settle time
-  alarm.alarmHour = rtc.readnvram(alarm.alarmHourAddr); //read alarm value from nvram
-  alarm.alarmMinute = rtc.readnvram(alarm.alarmMinuteAddr); //read alarm value from nvram
+
+  //read alarm value from nvram
+  alarm.alarmHour = rtc.readnvram(alarm.alarmHourAddr);
+  alarm.alarmMinute = rtc.readnvram(alarm.alarmMinuteAddr);
+  alarm.alarmIsOn = rtc.readnvram(alarm.alarmIsOnAddr);
 
   pinMode(buzzerPin, OUTPUT);
   pinMode(ALARM_LED, OUTPUT);
@@ -376,16 +382,19 @@ void evaluateButtons() {
     //    Serial.println("Setting alarm");
     if (isSetMinutePressed()) {
       incrementAlarmMinute();
+      setRTCRam(alarm.alarmMinuteAddr, alarm.alarmMinute);
     }
 
     if (isSetHourPressed()) {
       incrementAlarmHour();
+      setRTCRam(alarm.alarmHourAddr, alarm.alarmHour);
     }
   }
 
   //TOGGLE ALARM
   if (isToggleAlarmOnOffPressed()) {
     alarm.alarmIsOn = !alarm.alarmIsOn;
+    setRTCRam(alarm.alarmIsOnAddr, alarm.alarmIsOn);
     if (!alarm.alarmIsOn) {
       toggleAlarmBuzzing(false);
       alarm.snoozeMinutes = 0;
@@ -395,6 +404,7 @@ void evaluateButtons() {
   if (isCycleColorPressed()) {
     //rotate through colors
     currentColorHue = currentColorHue + 5;
+    setRTCRam(colorAddress, currentColorHue);
   }
 
 }
@@ -482,7 +492,9 @@ bool detectTouch() {
   return touched;
 }
 
-
+void setRTCRam(byte address, byte data) {
+  rtc.writenvram(address, data);
+}
 
 void updatePixels(byte hour, byte minute) {
   // minute is always the same for either 24/12

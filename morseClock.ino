@@ -259,6 +259,7 @@ void setup() {
   alarm.alarmHour = rtc.readnvram(alarm.alarmHourAddr);
   alarm.alarmMinute = rtc.readnvram(alarm.alarmMinuteAddr);
   alarm.alarmIsOn = rtc.readnvram(alarm.alarmIsOnAddr);
+  currentColorHue = rtc.readnvram(colorAddress);
 
   pinMode(buzzerPin, OUTPUT);
   pinMode(ALARM_LED, OUTPUT);
@@ -269,9 +270,6 @@ void setup() {
 
   startTime = micros();
   delay(100); // allow everything to settle
-  DateTime now = rtc.now();
-  alarm.alarmHour = now.hour();
-  alarm.alarmMinute = now.minute();
 }
 
 

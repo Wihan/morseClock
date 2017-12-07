@@ -534,7 +534,7 @@ void changeBrightness() {
   //      Serial.println("OLD Light: ");
   //      Serial.print(oldAmbientLight);
 
-  int newAmbientLight = map(oldAmbientLight, 0, 1024, 10, 90);
+  int newAmbientLight = map(oldAmbientLight, 0, 1024, 1, 65);
   //      Serial.println("NEW Light: ");
   //      Serial.println(newAmbientLight);
 

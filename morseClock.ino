@@ -281,6 +281,8 @@ void loop() {
 
   //display loop runs ever so often
   if (diff >= REFRESH_PERIOD) {
+    evaluateButtons();
+
     startTime = micros();
     changeBrightness();
     DateTime now = rtc.now();
@@ -296,8 +298,6 @@ void loop() {
     alarmLoop(now);
 
   }
-
-    evaluateButtons();
 
 }
 

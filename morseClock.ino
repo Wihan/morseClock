@@ -297,7 +297,7 @@ void loop() {
 
   }
 
-  evaluateButtons();
+    evaluateButtons();
 
 }
 
@@ -311,7 +311,10 @@ void alarmLoop(DateTime now) {
     int totalClockMinutes = ((now.hour() * 60) + now.minute() ) % 1440; // 1440 is number of minutes in a day
     int totalAlarmMinutes = ((alarm.alarmHour * 60) + alarm.alarmMinute + alarm.snoozeMinutes) % 1440;
     // buzz again if set to buzzing or start buzzing when our times are equal
-    if ( (alarm.isBuzzing) || ( totalClockMinutes == totalAlarmMinutes ) ) {
+
+    if (alarm.isBuzzing && ((totalAlarmMinutes - alarm.snoozeMinutes) + 60 >= totalClockMinutes ) ) {
+      toggleAlarmBuzzing(false);
+    } else if ( (alarm.isBuzzing) || ( totalClockMinutes == totalAlarmMinutes ) ) {
       toggleAlarmBuzzing(true);
 
       if (detectTouch()) {
@@ -412,7 +415,6 @@ void toggleAlarmBuzzing(boolean buzz) {
     alarm.isBuzzing = true;
     tone(buzzerPin, 24);
 
-    // is this ms blocking?
   } else {
     alarm.isBuzzing = false;
     noTone(buzzerPin);
